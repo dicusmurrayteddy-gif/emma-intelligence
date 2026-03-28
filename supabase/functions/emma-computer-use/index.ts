@@ -503,9 +503,17 @@ serve(async (req) => {
       const xvfb = await runCommand(sandbox, "bash", ["-lc", "Xvfb :0 -screen 0 1024x768x24 -ac &>/tmp/xvfb.log & sleep 3; cat /tmp/xvfb.log 2>&1; echo '---'; ls -la /tmp/.X11-unix/ 2>&1; echo '---'; ps aux | grep -i '[Xx]vfb'"], 10, {});
       results.xvfb = { stdout: xvfb.stdout, stderr: xvfb.stderr, exitCode: xvfb.exitCode };
 
-      // Try taking a screenshot
-      const shot = await runCommand(sandbox, "bash", ["-lc", "DISPLAY=:0 import -window root /tmp/test.png 2>&1 && echo 'screenshot-ok' && ls -la /tmp/test.png || echo 'screenshot-failed'"], 10, {});
-      results.screenshot = { stdout: shot.stdout, stderr: shot.stderr, exitCode: shot.exitCode };
+      // Try scrot screenshot (after Xvfb is running)
+      const shot = await runCommand(sandbox, "bash", ["-lc", "DISPLAY=:0 scrot /tmp/test.png --overwrite 2>&1 && echo 'screenshot-ok' && ls -la /tmp/test.png || echo 'screenshot-failed'"], 10, {});
+      results.screenshot_scrot = { stdout: shot.stdout, stderr: shot.stderr, exitCode: shot.exitCode };
+
+      // Try scrot via envs parameter
+      const shot2 = await runCommand(sandbox, "scrot", ["/tmp/test2.png", "--overwrite"], 10, { DISPLAY: ":0" });
+      results.screenshot_scrot_envs = { stdout: shot2.stdout, stderr: shot2.stderr, exitCode: shot2.exitCode };
+
+      // Check if file was created
+      const fileCheck = await runCommand(sandbox, "bash", ["-lc", "ls -la /tmp/test*.png 2>&1"], 5, {});
+      results.files = { stdout: fileCheck.stdout };
 
       // Cleanup
       try {
