@@ -485,6 +485,38 @@ serve(async (req) => {
     const { action } = body;
     console.log(`[emma-cu] action=${action}`);
 
+    // Temporary debug action — no auth required
+    if (action === "debug_sandbox") {
+      const sandbox = await createSandbox("debug-user", "diagnostics");
+      const results: Record<string, any> = { sandboxId: sandbox.sandboxId };
+
+      // Check what's installed
+      const which = await runCommand(sandbox, "bash", ["-lc", "which Xvfb xdpyinfo scrot import python3 2>&1; echo '---'; dpkg -l | grep -iE 'xvfb|xfce|scrot|imagemagick' 2>&1 | head -20; echo '---'; ls -la /tmp/.X11-unix/ 2>&1; echo '---'; ps aux 2>&1 | head -30"], 15, {});
+      results.installed = { stdout: which.stdout, stderr: which.stderr, exitCode: which.exitCode };
+
+      // Check DISPLAY env
+      const displayCheck = await runCommand(sandbox, "bash", ["-lc", "echo DISPLAY=$DISPLAY; env | sort | head -30"], 5, {});
+      results.env = { stdout: displayCheck.stdout, stderr: displayCheck.stderr };
+
+      // Try starting Xvfb
+      const xvfb = await runCommand(sandbox, "bash", ["-lc", "Xvfb :0 -screen 0 1024x768x24 -ac &>/tmp/xvfb.log & sleep 3; cat /tmp/xvfb.log 2>&1; echo '---'; ls -la /tmp/.X11-unix/ 2>&1; echo '---'; ps aux | grep -i '[Xx]vfb'"], 10, {});
+      results.xvfb = { stdout: xvfb.stdout, stderr: xvfb.stderr, exitCode: xvfb.exitCode };
+
+      // Try taking a screenshot
+      const shot = await runCommand(sandbox, "bash", ["-lc", "DISPLAY=:0 import -window root /tmp/test.png 2>&1 && echo 'screenshot-ok' && ls -la /tmp/test.png || echo 'screenshot-failed'"], 10, {});
+      results.screenshot = { stdout: shot.stdout, stderr: shot.stderr, exitCode: shot.exitCode };
+
+      // Cleanup
+      try {
+        await fetch(`${E2B_API_BASE}/sandboxes/${sandbox.sandboxId}`, {
+          method: "DELETE",
+          headers: { "X-API-Key": apiKey },
+        });
+      } catch {}
+
+      return json(results);
+    }
+
     switch (action) {
       // Create a new desktop sandbox
       case "start_session": {
