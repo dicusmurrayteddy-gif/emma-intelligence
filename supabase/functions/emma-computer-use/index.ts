@@ -359,7 +359,7 @@ serve(async (req) => {
           }
           case "open_url": {
             const escaped = params.url.replace(/'/g, "\\'");
-            await runCommand(sessionId, token, "bash", ["-c", `DISPLAY=:0 xdg-open '${escaped}' &`]);
+            await runCommand(sessionId, token, `DISPLAY=:0 xdg-open '${escaped}' &`);
             break;
           }
           case "wait": {
@@ -373,7 +373,7 @@ serve(async (req) => {
         }
 
         if (pyCode) {
-          const cmdResult = await runCommand(sessionId, token, "python3", ["-c", pyCode]);
+          const cmdResult = await runCommand(sessionId, token, `python3 -c "${pyCode.replace(/"/g, '\\"')}"`);
           if (cmdResult.exitCode !== 0) {
             result = { success: false, error: cmdResult.stderr || "Command failed" };
           }
