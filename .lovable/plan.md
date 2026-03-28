@@ -1,78 +1,96 @@
 
-Goal: eliminate the `Failed to fetch` / black-screen loop by fixing the real server-side timeout, making session startup non-blocking, and moving all slow desktop boot work into an explicit readiness phase.
 
-What I found
-- The current failure is no longer mainly “desktop is black”; it is `start_session` timing out.
-- Logs show `action=start_session`, sandbox creation succeeds, but the function never logs `Desktop kickstarted...`.
-- Analytics shows the request ends as `504` after ~150s, which matches the browser showing `Failed to fetch`.
-- So the durable bug is: `start_session` is blocking on desktop init and hanging inside `kickstartDesktop()/runCommand`.
-- Also, the backend boot timeout is still `45_000`, so the earlier 90s increase is not actually in the current function code.
+## Root Cause Analysis (Definitive)
 
-Implementation plan
+I read the **official E2B Desktop SDK source code** (`@e2b/desktop` on GitHub) and compared it line-by-line with our edge function. The black screen is caused by **multiple critical deviations** from how E2B expects the desktop to be initialized.
 
-1. Make `start_session` fast and non-blocking
-- Update `supabase/functions/emma-computer-use/index.ts` so `start_session` only:
-  - creates the sandbox
-  - caches session metadata
-  - returns immediately
-- Remove the blocking `await kickstartDesktop(sandbox)` from `start_session`.
-- Result: the UI gets a session ID quickly and will never fail with a gateway timeout during startup.
+### What the official SDK does vs what we do
 
-2. Refactor desktop boot into short, detached backend steps
-- Rewrite `kickstartDesktop()` so it does not run one long shell script through a single envd process call.
-- Split boot into distinct commands:
-  - ensure `Xvfb` is launched in a truly detached way
-  - poll briefly for `/tmp/.X11-unix/X0`
-  - launch XFCE/window manager in a separate detached command
-- Use `nohup`/fully detached backgrounding and short per-command timeouts so envd does not keep the request open.
-- Keep it idempotent with `pgrep` checks.
+```text
+STEP              SDK (_start method)                   OUR CODE (kickstartDesktop)
+─────────────     ──────────────────────                 ─────────────────────────────
+Xvfb flags        -retro -dpi 96 -nolisten tcp/unix     -ac only
+Xvfb verify       xdpyinfo -display :0 (polls)          test -S /tmp/.X11-unix/X0
+XFCE start        startxfce4 (background, timeoutMs:0)  nohup bash -lc 'dbus-launch --exit-with-session startxfce4' (complex chain)
+WM check          ps aux | grep PID                     pgrep -f xfce4-session (matches grep itself!)
+DISPLAY env       Set at sandbox creation via envs       Never set, only passed per-command
+Screenshot        scrot --pointer /tmp/screenshot-X.png  scrot /tmp/screenshot.png --overwrite
+Mouse/keyboard    xdotool                                pyautogui (requires separate Python + pip)
+Live view         x11vnc + noVNC on port 6080            None (streamUrl always null)
+```
 
-3. Move all boot waiting into `wait_until_ready`
-- Keep `wait_until_ready` as the only place allowed to wait up to full boot time.
-- Increase `DESKTOP_BOOT_TIMEOUT_MS` to 90s there.
-- On each retry:
-  - re-check display/socket state
-  - re-run `kickstartDesktop()` only when needed
-  - attempt screenshot capture
-- Return explicit stage/error info instead of just a generic timeout.
+### Why the screen stays black
 
-4. Harden screenshot readiness detection
-- Keep backend screenshot capture as the source of truth.
-- If screenshot capture fails, return a structured reason like:
-  - `display_not_ready`
-  - `window_manager_not_ready`
-  - `screenshot_failed`
-- Preserve the frontend meaningful-image check only as a secondary UX guard, not as the primary readiness mechanism.
+1. **False positive process detection**: `pgrep -f xfce4-session` matches the bash wrapper process or itself, so it always reports "wm-already-running" even if XFCE never actually started rendering.
+2. **XFCE startup chain is broken**: The `nohup bash -lc 'dbus-launch --exit-with-session startxfce4'` chain is unreliable — `bash -lc` sources login profiles that may block, and the `exec` inside nohup can silently fail.
+3. **Missing Xvfb flags**: Without `-retro`, the Xvfb framebuffer may not initialize properly for screenshot capture.
+4. **No DISPLAY in sandbox environment**: Unlike the SDK which passes `DISPLAY=:0` at sandbox creation, our code only sets it per-command — XFCE's child processes may not inherit it.
+5. **`pyautogui` may not be installed**: The desktop template has `xdotool` pre-installed but not necessarily Python's pyautogui package.
 
-5. Fix frontend error handling so failures are understandable
-- Update `src/components/ComputerUseAgent.tsx`:
-  - handle fetch-level failures separately from JSON API errors
-  - surface messages like `Desktop startup request timed out` or `Backend boot phase failed`
-  - keep the sequence strict: `start_session` → `wait_until_ready` → agent loop
-- Ensure the log panel shows the last real backend reason instead of repeating “still booting”.
+---
 
-6. Prevent future regressions
-- Add stronger backend logging around:
-  - each boot stage
-  - each runCommand call
-  - each readiness retry
-  - final failure category
-- Remove the temporary `debug_sandbox` action once the stable flow is verified.
-- Ensure `start_session` cannot ever spend long enough to hit the function gateway timeout again.
+## Implementation Plan
 
-Files to update
-- `supabase/functions/emma-computer-use/index.ts`
-- `src/components/ComputerUseAgent.tsx`
+### 1. Align `kickstartDesktop()` with the official SDK exactly
 
-Expected outcome
-- Clicking Start returns quickly every time.
-- The desktop boot wait happens only in `wait_until_ready`.
-- No more `Failed to fetch` from startup timeouts.
-- If the desktop fails, the UI shows the exact failing stage.
-- The agent never begins reasoning until a real screenshot is available.
+Rewrite to match the SDK's `_start()` method:
 
-Validation
-- Confirm `start_session` completes in a few seconds and no longer appears as a 504 in backend logs.
-- Confirm `wait_until_ready` can wait up to 90s without the initial request failing.
-- Confirm first visible screenshot appears before any `think` step.
-- Confirm failures now show a concrete reason instead of infinite black-screen / boot-loop behavior.
+- **Xvfb**: Start with `-ac -screen 0 1024x768x24 -retro -dpi 96 -nolisten tcp -nolisten unix` flags, run in background
+- **Verify display**: Use `xdpyinfo -display :0` in a polling loop (up to 10s), not socket file check
+- **Start XFCE**: Run just `DISPLAY=:0 startxfce4` as a background command — no nohup/bash-lc/dbus-launch wrapper
+- **Track XFCE PID**: Store PID and check with `ps aux | grep PID` (like SDK does) instead of loose `pgrep -f`
+
+### 2. Set `DISPLAY=:0` at sandbox creation
+
+Pass `DISPLAY: ":0"` in the `envs` field of the `createSandbox` POST body, matching the SDK's behavior.
+
+### 3. Switch from `pyautogui` to `xdotool`
+
+Replace all `execute` action handlers:
+- `click` → `xdotool mousemove --sync X Y && xdotool click 1`
+- `double_click` → `xdotool mousemove --sync X Y && xdotool click --repeat 2 1`
+- `type` → `xdotool type --delay 20 "text"` (chunked for long strings)
+- `hotkey` → `xdotool key ctrl+a` etc
+- `scroll` → `xdotool click --repeat N 4/5`
+
+This eliminates the Python dependency and matches the SDK.
+
+### 4. Add VNC live streaming
+
+Implement what the SDK's `VNCServer` class does:
+- Start `x11vnc` on port 5900 against DISPLAY=:0
+- Start noVNC proxy on port 6080
+- Return the stream URL: `https://6080-{sandboxId}.e2b.app/vnc.html?autoconnect=true&resize=scale`
+- Set `streamUrl` in the `start_session` response so the frontend shows a live iframe instead of polling screenshots
+
+### 5. Fix screenshot to match SDK
+
+Use `scrot --pointer /tmp/screenshot-{random}.png` (with `--pointer` flag and unique filenames) instead of `--overwrite`.
+
+### 6. Improve `getDesktopStage()` verification
+
+- Use `xdpyinfo -display :0` for display check (not just pgrep)
+- Use `xdotool getwindowfocus` to verify a window is actually visible (not just process detection)
+- These are the same checks the SDK uses
+
+### 7. Update frontend for live stream
+
+- When `streamUrl` is returned, show the VNC iframe immediately — no screenshot polling needed
+- Keep screenshot-based approach as fallback when VNC isn't available
+- The VNC view is interactive, so users can also watch in real-time
+
+---
+
+### Files to update
+
+- `supabase/functions/emma-computer-use/index.ts` — all backend changes
+- `src/components/ComputerUseAgent.tsx` — VNC stream display, minor adjustments
+
+### Expected outcome
+
+- Desktop renders within 10-15 seconds (matching SDK behavior)
+- Live VNC stream visible in the UI immediately
+- No more "black screen" loops — xdpyinfo + xdotool getwindowfocus confirm actual rendering
+- Mouse/keyboard actions work reliably via xdotool
+- If boot fails, the failure reason is precise (e.g., "xdpyinfo failed after 10s" vs "wm-already-running but no visible windows")
+
