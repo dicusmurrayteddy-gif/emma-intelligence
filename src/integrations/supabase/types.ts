@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_insights: {
+        Row: {
+          applied: boolean
+          category: string
+          created_at: string
+          data: Json
+          description: string
+          id: string
+          insight_type: string
+        }
+        Insert: {
+          applied?: boolean
+          category?: string
+          created_at?: string
+          data?: Json
+          description: string
+          id?: string
+          insight_type?: string
+        }
+        Update: {
+          applied?: boolean
+          category?: string
+          created_at?: string
+          data?: Json
+          description?: string
+          id?: string
+          insight_type?: string
+        }
+        Relationships: []
+      }
       api_keys: {
         Row: {
           created_at: string
@@ -228,6 +258,36 @@ export type Database = {
         }
         Relationships: []
       }
+      learning_patterns: {
+        Row: {
+          applied_to_prompt_version: number | null
+          confidence_score: number
+          created_at: string
+          frequency: number
+          id: string
+          pattern_data: Json
+          pattern_type: string
+        }
+        Insert: {
+          applied_to_prompt_version?: number | null
+          confidence_score?: number
+          created_at?: string
+          frequency?: number
+          id?: string
+          pattern_data?: Json
+          pattern_type?: string
+        }
+        Update: {
+          applied_to_prompt_version?: number | null
+          confidence_score?: number
+          created_at?: string
+          frequency?: number
+          id?: string
+          pattern_data?: Json
+          pattern_type?: string
+        }
+        Relationships: []
+      }
       memory_episodes: {
         Row: {
           content: string
@@ -314,6 +374,36 @@ export type Database = {
           display_name?: string | null
           id?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      prompt_evolutions: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          performance_delta: number | null
+          prompt_text: string
+          source_insights: Json
+          version: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          performance_delta?: number | null
+          prompt_text: string
+          source_insights?: Json
+          version?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          performance_delta?: number | null
+          prompt_text?: string
+          source_insights?: Json
+          version?: number
         }
         Relationships: []
       }
