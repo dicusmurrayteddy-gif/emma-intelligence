@@ -60,7 +60,7 @@ async function runCommand(sandboxId: string, envdAccessToken: string, cmd: strin
       "Content-Type": "application/connect+json",
       "Connect-Protocol-Version": "1",
       "Connect-Timeout-Ms": String(timeoutMs),
-      "Authorization": `Bearer ${envdAccessToken}`,
+      "X-Access-Token": envdAccessToken,
     },
     body: JSON.stringify({
       process: { cmd, args, envs: { DISPLAY: ":0" } },
@@ -103,7 +103,7 @@ async function runCommand(sandboxId: string, envdAccessToken: string, cmd: strin
 async function downloadFile(sandboxId: string, envdAccessToken: string, filePath: string): Promise<Uint8Array> {
   const url = `https://49983-${sandboxId}.e2b.app/files?path=${encodeURIComponent(filePath)}`;
   const resp = await fetch(url, {
-    headers: { "Authorization": `Bearer ${envdAccessToken}` },
+    headers: { "X-Access-Token": envdAccessToken },
   });
   if (!resp.ok) throw new Error(`File download failed: ${resp.status}`);
   return new Uint8Array(await resp.arrayBuffer());
