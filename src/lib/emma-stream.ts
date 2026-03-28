@@ -23,11 +23,10 @@ async function getAuthHeader(): Promise<Record<string, string>> {
 }
 
 export async function streamChat({ messages, feedback, mode, answerStyle, onDelta, onDone, onError }: { messages: Message[]; feedback?: { type: string; summary: string }[]; mode?: EmmaMode; answerStyle?: AnswerStyle; onDelta: (deltaText: string) => void; onDone: () => void; onError: (error: string) => void }) {
-  const auth = await getAuthHeader();
-  const resp = await fetch(CHAT_URL, {
+  const resp = await fetch(OLLAMA_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...auth },
-    body: JSON.stringify({ messages: messages.map(m => ({ role: m.role, content: m.content })), feedback, mode: mode || "chat", answerStyle: answerStyle || "standard" }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: OLLAMA_MODEL, messages: messages.map(m => ({ role: m.role, content: m.content })), stream: true }),
   });
 
   if (!resp.ok) { const data = await resp.json().catch(() => ({ error: "Connection failed" })); onError(data.error || `Error ${resp.status}`); return; }
