@@ -314,23 +314,27 @@ async function getSandbox(sandboxId: string, envdAccessToken?: string | null): P
 
 // Take a screenshot using the sandbox's command execution
 async function captureScreenshot(sandbox: SandboxSession): Promise<string> {
-  // Try multiple screenshot methods
-  const methods: Array<{ cmd: string; args: string[]; envs?: Record<string, string> }> = [
-    { cmd: "import", args: ["-window", "root", "/tmp/screenshot.png"], envs: { DISPLAY: ":0" } },
-    { cmd: "scrot", args: ["/tmp/screenshot.png", "--overwrite"], envs: { DISPLAY: ":0" } },
-    { cmd: "python3", args: ["-c", "import pyautogui; pyautogui.screenshot('/tmp/screenshot.png')"], envs: { DISPLAY: ":0" } },
+  // Try multiple screenshot methods — scrot first (known installed), then pyautogui
+  // Note: `import` (ImageMagick) is NOT installed in the desktop template
+  const methods: Array<{ label: string; cmd: string; args: string[]; envs?: Record<string, string> }> = [
+    { label: "scrot", cmd: "scrot", args: ["/tmp/screenshot.png", "--overwrite"], envs: { DISPLAY: ":0" } },
+    { label: "scrot-bash", cmd: "bash", args: ["-lc", "DISPLAY=:0 scrot /tmp/screenshot.png --overwrite"], envs: {} },
+    { label: "xdpyinfo+scrot", cmd: "bash", args: ["-lc", "export DISPLAY=:0; xdpyinfo >/dev/null 2>&1 && scrot /tmp/screenshot.png --overwrite"], envs: {} },
   ];
 
   let lastError = "";
   for (const method of methods) {
     try {
+      console.log(`[screenshot] trying ${method.label}...`);
       const result = await runCommand(sandbox, method.cmd, method.args, 15, method.envs ?? {});
+      console.log(`[screenshot] ${method.label}: exit=${result.exitCode} stdout=${result.stdout.slice(0,100)} stderr=${result.stderr.slice(0,200)}`);
       if (result.exitCode === 0) {
         return toBase64(await readSandboxFile(sandbox, "/tmp/screenshot.png"));
       }
       lastError = result.stderr || result.stdout || `exit ${result.exitCode}`;
     } catch (e) {
       lastError = e instanceof Error ? e.message : "Unknown error";
+      console.log(`[screenshot] ${method.label} threw: ${lastError}`);
     }
   }
 
