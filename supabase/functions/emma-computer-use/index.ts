@@ -514,6 +514,9 @@ serve(async (req) => {
       return json(results);
     }
 
+    const userId = await getClerkUserId(req);
+    if (!userId) return json({ error: "Unauthorized — sign in required" }, 401);
+
     switch (action) {
       // Create a new desktop sandbox
       case "start_session": {
