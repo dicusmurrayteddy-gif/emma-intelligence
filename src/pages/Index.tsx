@@ -114,7 +114,43 @@ export default function Index() {
 
   const handleDeleteArtifact = useCallback((id: string) => { setArtifacts(prev => prev.filter(a => a.id !== id)); }, []);
 
+  const checkUsageAndSend = async (input: string) => {
+    // Check if user needs to pay
+    const usage = getLocalUsage();
+    if (!usage.isPaid && isOverLimit()) {
+      setShowPaywall(true);
+      return;
+    }
+
+    // For anonymous users, track usage via fingerprint
+    const fp = await generateFingerprint();
+    try {
+      const tokenGetter = getToken || (async () => null);
+      await dbProxy("track_usage", { fingerprint: fp }, tokenGetter);
+    } catch {}
+    incrementLocalUsage();
+
+    await send(input);
+  };
+
   const send = async (input: string) => {
+    // For anonymous users without conversation support, just do local chat
+    if (!user) {
+      const userMsg: Message = { role: "user", content: input, mode };
+      addLocal(userMsg);
+      setIsLoading(true);
+      let assistantSoFar = "";
+      try {
+        await streamChat({
+          messages: [...messages, userMsg], mode, answerStyle,
+          onDelta: (chunk) => { assistantSoFar += chunk; updateLastAssistant(assistantSoFar); },
+          onDone: async () => { setIsLoading(false); },
+          onError: (err) => { setIsLoading(false); toast.error(err); },
+        });
+      } catch { setIsLoading(false); toast.error("Failed to connect to Emma"); }
+      return;
+    }
+
     const convId = await ensureConversation(input);
     if (!convId) return;
 
@@ -165,7 +201,6 @@ export default function Index() {
   };
 
   if (authLoading) return <div className="h-screen flex items-center justify-center bg-background"><EmmaAvatar size="lg" /></div>;
-  if (!user) return <Navigate to="/sign-in" />;
 
   const showWelcome = messages.length === 0 && mode === "chat";
   const isChatMode = mode === "chat";
