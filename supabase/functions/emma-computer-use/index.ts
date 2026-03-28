@@ -140,6 +140,18 @@ async function createSandbox(userId: string, task?: string): Promise<SandboxSess
   return session;
 }
 
+async function initDesktop(sandbox: SandboxSession): Promise<void> {
+  // Start Xvfb display server
+  await runCommand(sandbox, "bash", ["-lc", "Xvfb :0 -screen 0 1024x768x24 &"], 5, {});
+  // Give Xvfb a moment to start
+  await new Promise((r) => setTimeout(r, 2000));
+  // Start a lightweight window manager
+  await runCommand(sandbox, "bash", ["-lc", "DISPLAY=:0 startxfce4 &"], 5, {});
+  // Install screenshot tools if missing
+  await runCommand(sandbox, "bash", ["-lc", "which scrot || apt-get install -y scrot 2>/dev/null"], 10, {});
+  await runCommand(sandbox, "bash", ["-lc", "pip3 install pyautogui pillow 2>/dev/null || true"], 15, {});
+}
+
 function collectProcessOutput(value: unknown, state: { stdout: string; stderr: string; exitCode?: number }) {
   if (!value) return;
   if (Array.isArray(value)) {
