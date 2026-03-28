@@ -492,6 +492,10 @@ serve(async (req) => {
         const sandbox = await createSandbox(userId, body.task);
         console.log(`[emma-cu] Sandbox created: ${sandbox.sandboxId}`);
 
+        // Fire-and-forget desktop kickstart (returns in <1s)
+        await kickstartDesktop(sandbox);
+        console.log(`[emma-cu] Desktop kickstarted for ${sandbox.sandboxId}`);
+
         return json({
           sessionId: sandbox.sandboxId,
           streamUrl: null,
