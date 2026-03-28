@@ -9,6 +9,8 @@ const corsHeaders = {
 const JWKS = createRemoteJWKSet(new URL("https://evident-mink-7.clerk.accounts.dev/.well-known/jwks.json"));
 const AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const E2B_API = "https://api.e2b.dev";
+const DESKTOP_BOOT_TIMEOUT_MS = 45_000;
+const DESKTOP_BOOT_POLL_MS = 2_000;
 
 async function getClerkUserId(req: Request): Promise<string | null> {
   const token = req.headers.get("Authorization")?.replace("Bearer ", "");
@@ -42,6 +44,50 @@ async function e2bRequest(path: string, method = "GET", body?: any) {
     throw new Error(`E2B API error ${resp.status}: ${err}`);
   }
   return resp.json();
+}
+
+async function captureDesktopScreenshot(sessionId: string) {
+  const apiKey = Deno.env.get("E2B_API_KEY");
+  if (!apiKey) throw new Error("E2B_API_KEY not configured");
+
+  const screenshotResp = await fetch(`https://${sessionId}-8000.e2b.dev/screenshot`, {
+    headers: { "X-API-Key": apiKey },
+  });
+
+  if (!screenshotResp.ok) {
+    const errorText = await screenshotResp.text().catch(() => "Screenshot unavailable");
+    throw new Error(`Screenshot unavailable (${screenshotResp.status}): ${errorText.slice(0, 120)}`);
+  }
+
+  const buffer = await screenshotResp.arrayBuffer();
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+async function waitForDesktopReady(sessionId: string) {
+  const startedAt = Date.now();
+  let lastError = "Desktop is still starting";
+
+  while (Date.now() - startedAt < DESKTOP_BOOT_TIMEOUT_MS) {
+    try {
+      const screenshot = await captureDesktopScreenshot(sessionId);
+      return {
+        ready: true,
+        screenshot,
+        waitedMs: Date.now() - startedAt,
+        message: "Desktop initialized and screenshot capture is available",
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Desktop is still starting";
+      await new Promise((resolve) => setTimeout(resolve, DESKTOP_BOOT_POLL_MS));
+    }
+  }
+
+  return {
+    ready: false,
+    waitedMs: Date.now() - startedAt,
+    message: "Desktop did not finish initializing before timeout",
+    error: lastError,
+  };
 }
 
 // Call AI vision model to reason about screenshot and decide next action
@@ -166,21 +212,20 @@ serve(async (req) => {
         const { sessionId } = body;
         if (!sessionId) return json({ error: "Missing sessionId" }, 400);
 
-        // Use E2B desktop API to take screenshot
-        const apiKey = Deno.env.get("E2B_API_KEY")!;
-        const screenshotResp = await fetch(
-          `https://${sessionId}-8000.e2b.dev/screenshot`,
-          { headers: { "X-API-Key": apiKey } }
-        );
-
-        if (!screenshotResp.ok) {
-          // Fallback: try the sandbox API
-          return json({ screenshot: null, error: "Screenshot unavailable" });
+        try {
+          const screenshot = await captureDesktopScreenshot(sessionId);
+          return json({ screenshot });
+        } catch (error) {
+          return json({ screenshot: null, error: error instanceof Error ? error.message : "Screenshot unavailable" });
         }
+      }
 
-        const buffer = await screenshotResp.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-        return json({ screenshot: base64 });
+      case "wait_until_ready": {
+        const { sessionId } = body;
+        if (!sessionId) return json({ error: "Missing sessionId" }, 400);
+
+        const readiness = await waitForDesktopReady(sessionId);
+        return readiness.ready ? json(readiness) : json(readiness, 408);
       }
 
       // Execute an action on the sandbox (mouse/keyboard)
@@ -252,19 +297,10 @@ serve(async (req) => {
         const { sessionId, task, actionHistory, userMessage } = body;
         if (!sessionId || !task) return json({ error: "Missing sessionId or task" }, 400);
 
-        // Take screenshot first
-        const apiKey = Deno.env.get("E2B_API_KEY")!;
         let screenshotBase64 = "";
 
         try {
-          const screenshotResp = await fetch(
-            `https://${sessionId}-8000.e2b.dev/screenshot`,
-            { headers: { "X-API-Key": apiKey } }
-          );
-          if (screenshotResp.ok) {
-            const buffer = await screenshotResp.arrayBuffer();
-            screenshotBase64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-          }
+          screenshotBase64 = await captureDesktopScreenshot(sessionId);
         } catch {
           // If screenshot fails, use a blank description
         }
