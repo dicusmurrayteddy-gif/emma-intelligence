@@ -3,7 +3,7 @@ import {
   Plus,
   Bot,
   BarChart3,
-  Settings,
+  
   LogOut,
   Trash2,
 } from "lucide-react";
