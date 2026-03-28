@@ -24,6 +24,7 @@ serve(async (req) => {
 
   try {
     const userId = await getClerkUserId(req);
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const body = await req.json();
     const { action } = body;
 
@@ -34,10 +35,6 @@ serve(async (req) => {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const body = await req.json();
-    const { action } = body;
 
     switch (action) {
       case "list_conversations": {
