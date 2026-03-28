@@ -452,6 +452,9 @@ serve(async (req) => {
       case "start_session": {
         const sandbox = await createSandbox(userId, body.task);
 
+        // Initialize the desktop display server
+        await initDesktop(sandbox);
+
         return json({
           sessionId: sandbox.sandboxId,
           streamUrl: null,
