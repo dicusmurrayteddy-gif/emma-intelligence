@@ -1,115 +1,195 @@
 
 
-# Aether — AI Operating System
+# Emma ASI/AGI Feature Audit & Plan to 100%
 
-## Honest Assessment
+## Current Completion by Feature Category
 
-This is an enormous request. Many features (E2B sandboxed execution, video generation APIs, Browserbase computer-use, Suno music generation, GitHub Octokit integration) require external API keys and services the user hasn't configured yet. The plan below builds the **complete UI shell** with real functionality where possible, and **well-structured scaffolding** for API-dependent features that can be wired up incrementally.
+### 1. Core Chat Interface — 85%
+**Done:** Streaming AI chat, markdown rendering, dark mode, split-pane layout, sidebar, welcome screen, suggestion cards, auto-scroll
+**Missing:**
+- File attachment button exists but does nothing (no upload logic)
+- No syntax highlighting in code blocks (rehype-highlight not wired)
+- No "Open in Editor" button on code blocks to send code to Monaco panel
+- No conversation rename UI (hook exists but no inline editing)
 
-**What works immediately (no extra keys):**
-- Full Aether UI (sidebar, split-pane, chat, agents panel)
-- Streaming AI chat (already working via edge function)
-- Image generation (Lovable AI supports image models)
-- Auth + persistent conversations (database)
-- Monaco code editor panel
-- Dashboard with recharts
+### 2. Authentication & Persistence — 90%
+**Done:** Email/password login + signup, session management, RLS on conversations/messages, profiles table with trigger, persistent message history
+**Missing:**
+- No email verification flow guidance
+- No password reset page
+- No OAuth providers (Google, GitHub)
 
-**What needs API keys added later:**
-- E2B (sandboxed execution) — needs `E2B_API_KEY`
-- ElevenLabs (TTS/voice) — needs connector
-- GitHub API (PRs, issues) — needs `GITHUB_TOKEN`
-- Video generation — needs Kling/Runway API key
-- Web search — needs Perplexity connector
-- Music generation — needs Suno API key
+### 3. IDE / Code Editor — 40%
+**Done:** Monaco editor with tabs, multi-file support, syntax highlighting, vs-dark theme
+**Missing:**
+- No connection between chat code blocks → editor ("Open in Editor" button)
+- No sandboxed code execution (needs E2B API)
+- No terminal output panel
+- No live preview iframe
+- No "Fix this error" loop
+- No file persistence (files lost on refresh)
 
-## Architecture
+### 4. Agent Swarm — 35%
+**Done:** 6 agent cards with status indicators, animated cycling during processing, swarm log
+**Missing:**
+- Purely cosmetic — no real agent routing or specialized system prompts
+- No Director → sub-agent task delegation logic
+- No self-improvement / post-task review
+- No autonomous long-running workflows
+- No real task planning with approval checkpoints
 
-```text
-┌─────────────────────────────────────────────────┐
-│                  AetherLayout                    │
-├──────────┬──────────────────────────────────────┤
-│ Sidebar  │  Main Content (split-pane)            │
-│          │  ┌────────────┬──────────────────┐    │
-│ • Chat   │  │  Chat      │  Right Panel     │    │
-│ • Projects│  │  Messages  │  (IDE/Preview/   │    │
-│ • Agents │  │  + Input   │   Agents/Dash)   │    │
-│ • Memory │  │            │                  │    │
-│ • Dash   │  └────────────┴──────────────────┘    │
-│ • Settings│                                      │
-└──────────┴──────────────────────────────────────┘
-```
+### 5. Image Generation — 75%
+**Done:** Edge function using Gemini image model, `/image` command detection, inline display, download button
+**Missing:**
+- No image editing/variation capabilities
+- No image understanding (upload image → describe)
+- No gallery/history of generated images
 
-## Implementation Steps
+### 6. Video Generation — 0%
+**Missing:** Everything. Needs external API (Kling/Runway/Luma), edge function, scene stitching, upload/edit flow
 
-### Step 1: Database + Auth
-- Create `profiles`, `conversations`, `messages` tables with RLS
-- Auth pages (login/signup) with email/password
-- Auto-create profile on signup via trigger
+### 7. Audio / Voice — 25%
+**Done:** Speech-to-text input via Web Speech API, mic toggle button
+**Missing:**
+- No text-to-speech output (needs ElevenLabs or browser TTS)
+- No voice cloning
+- No music generation (needs Suno API)
+- No speaker button on messages
 
-### Step 2: Rebrand Emma → Aether
-- Update system prompt, header, avatar, all branding
-- Replace cyan/purple palette with a warmer, more Arc-inspired scheme (deep navy bg, electric blue + warm amber accents)
-- Update CSS variables and utility classes
+### 8. File & GitHub Integration — 5%
+**Done:** Paperclip button exists in UI (non-functional)
+**Missing:**
+- No file upload to storage
+- No file understanding / RAG
+- No GitHub integration (clone, PR, issues, search)
+- No drag-and-drop
 
-### Step 3: Layout Shell
-- `AetherLayout` with `SidebarProvider` + resizable split panes
-- Sidebar: conversation list, new chat, navigation to Agents/Dashboard/Settings
-- Right panel with tabs: IDE, Agents, Preview, Dashboard
-- Mobile-responsive collapse behavior
+### 9. Search & Memory — 10%
+**Done:** Conversations and messages persist in DB
+**Missing:**
+- No vector embeddings / semantic search
+- No web search (needs Perplexity)
+- No knowledge graph visualization
+- No RAG pipeline
+- No cross-conversation memory
 
-### Step 4: Persistent Conversations
-- CRUD conversations in sidebar
-- Messages save to DB on send/receive
-- Load conversation history on selection
-- Auto-title conversations using first message
+### 10. Dashboard & Analytics — 45%
+**Done:** Dashboard page with conversation/message counts, mock token usage chart, agent list, capabilities list
+**Missing:**
+- Real token usage tracking (not mock data)
+- No predictive analytics
+- No Jupyter-style notebooks
+- No project velocity tracking
+- No cost curves
 
-### Step 5: Code Editor Panel
-- Integrate `@monaco-editor/react`
-- Tab-based multi-file editing
-- When AI returns code blocks → "Open in Editor" button
-- Syntax highlighting, theme matching Aether dark mode
+### 11. Conversation Branching — 80%
+**Done:** Branch button on messages, creates new conversation with copied messages, visual toast feedback
+**Missing:**
+- No visual branch indicator in sidebar (tree view)
+- No merge capability
 
-### Step 6: Agent Swarm UI
-- `AgentSwarm` component showing Director + sub-agents (Researcher, Coder, Designer, Analyst, QA)
-- Each agent card: avatar, status indicator, current task description
-- Animated state transitions (idle → thinking → complete)
-- Behind the scenes: single AI model, but system prompt switches based on "active agent"
+### 12. Multi-User / RBAC — 0%
+**Missing:** No organizations table, no role system, no shared workspaces
 
-### Step 7: Image Generation
-- New edge function `aether-image-gen` using `google/gemini-3.1-flash-image-preview`
-- Chat command detection or `/image` prefix
-- Inline image display with download button
+### 13. Integrations (Notion, Slack, Linear, SQL) — 0%
+**Missing:** Everything
 
-### Step 8: Dashboard
-- `/dashboard` route with recharts
-- Conversation count, message stats, token usage estimates
-- Activity timeline chart
+### 14. Computer Use / Desktop Control — 0%
+**Missing:** Everything (needs Browserbase/Anthropic API)
 
-### Step 9: Voice Mode (ElevenLabs)
-- Edge function for TTS using ElevenLabs connector
-- Mic input via Web Speech API (browser-native STT)
-- Voice toggle in chat input
+### 15. Custom Tool Builder — 0%
+**Missing:** Everything
 
-### Step 10: Conversation Branching
-- Fork button on any message → creates new conversation branch
-- Visual branch indicator in sidebar
+### 16. Sidebar "Agents" Link — BUG (404)
+The sidebar links to `/agents` but no route exists. Needs to either remove the link or add a route.
 
-## Files to Create/Modify (~25 files)
+---
 
-**New pages:** `Login.tsx`, `Signup.tsx`, `Dashboard.tsx`
-**New components:** `AetherLayout.tsx`, `AetherSidebar.tsx`, `CodeEditor.tsx`, `AgentSwarm.tsx`, `AgentCard.tsx`, `ConversationList.tsx`, `RightPanel.tsx`, `VoiceToggle.tsx`, `ImagePreview.tsx`
-**New edge functions:** `aether-image-gen/index.ts`
-**Modified:** `App.tsx`, `Index.tsx`, `index.css`, `tailwind.config.ts`, `emma-chat/index.ts` (rebrand prompt)
-**Database:** Migration for profiles, conversations, messages tables + RLS + trigger
+## Summary Table
 
-**New dependency:** `@monaco-editor/react`
+| Feature | Current | Achievable in Lovable |
+|---|---|---|
+| Core Chat | 85% | 100% |
+| Auth & Persistence | 90% | 95% (no OAuth without connector) |
+| IDE / Code Editor | 40% | 70% (no execution without E2B) |
+| Agent Swarm | 35% | 65% (UI + prompt routing, no true autonomy) |
+| Image Generation | 75% | 90% |
+| Video Generation | 0% | 10% (UI scaffold only) |
+| Audio / Voice | 25% | 50% (browser TTS, no cloning/music) |
+| File & GitHub | 5% | 40% (upload + storage, GitHub needs API key) |
+| Search & Memory | 10% | 30% (basic search, no vector DB) |
+| Dashboard | 45% | 75% (real stats, charts, no notebooks) |
+| Conversation Branching | 80% | 95% |
+| Multi-User / RBAC | 0% | 60% (DB + RLS, no full workspace UI) |
+| Integrations | 0% | 10% (scaffolding) |
+| Computer Use | 0% | 0% (external API only) |
+| Tool Builder | 0% | 30% (UI scaffold) |
 
-## Phasing
+---
 
-I'll build this across multiple implementation rounds:
-1. **Round 1:** DB + Auth + Layout + Sidebar + Persistent Chat (core foundation)
-2. **Round 2:** Code Editor + Agent Swarm + Image Gen + Dashboard
-3. **Round 3:** Voice mode + Branching + API scaffolding for E2B/GitHub/etc.
+## Plan to Maximize All Categories
 
-Ready to start with Round 1 on approval.
+### Step 1: Fix 404 Bug + Quick Wins (Chat → 100%, Branching → 95%)
+- Remove `/agents` sidebar link OR add `/agents` route that renders agent swarm full-page
+- Add `rehype-highlight` to ChatMessage for syntax-highlighted code blocks
+- Add "Open in Editor" button on code blocks that sends content to CodeEditor
+- Add inline conversation rename in sidebar (double-click title)
+- Add branch indicator icon on branched conversations in sidebar
+
+### Step 2: File Upload & Understanding (File → 40%)
+- Create Supabase storage bucket `chat-uploads`
+- Wire Paperclip button → file picker → upload to storage → send URL to AI with prompt "Analyze this file"
+- Support drag-and-drop on chat area
+- Display uploaded files inline in chat
+
+### Step 3: Enhanced IDE Panel (IDE → 70%)
+- Bidirectional code block ↔ editor integration
+- Add terminal-style output panel (display-only, shows AI responses about code)
+- Add "Run" button UI that shows "Code execution requires E2B API key" prompt
+- Persist editor files in localStorage
+
+### Step 4: Smart Agent Routing (Agents → 65%)
+- Create dedicated `/agents` page with full agent swarm view
+- Route different query types to different system prompts (code questions → Coder prompt, research → Researcher prompt)
+- Add agent selection dropdown in chat input
+- Post-task summary card showing which "agents" contributed
+
+### Step 5: Voice Output + Browser TTS (Voice → 50%)
+- Add browser-native `speechSynthesis` TTS on assistant messages (speaker button)
+- Voice mode toggle that auto-reads responses
+- No API key required for basic TTS
+
+### Step 6: Dashboard + Real Analytics (Dashboard → 75%)
+- Track actual token estimates per message (word count * 1.3)
+- Store token counts in message metadata
+- Replace mock data with real aggregated queries
+- Add message-per-day chart with real data
+- Add conversation length distribution
+
+### Step 7: Image Generation Polish (Image → 90%)
+- Add image understanding: upload image → AI describes/analyzes it
+- Add image variation: "Edit this image" with follow-up prompt
+- Gallery view of all generated images
+
+### Step 8: Database for RBAC Scaffold (RBAC → 30%)
+- Create `organizations` and `org_members` tables
+- Add `user_roles` table per Lovable guidelines
+- RLS policies for org-scoped data
+- UI: settings page showing org membership (no invite flow yet)
+
+### Step 9: API Scaffolding for External Services
+- Create edge function stubs for: E2B execution, web search, GitHub operations
+- Each returns clear "API key not configured" message
+- Settings page showing integration status and instructions
+- Ready to wire up when user adds API keys
+
+### Technical Details
+
+**Files to create/modify (~20 files):**
+- New: `src/pages/Agents.tsx`, `src/pages/Settings.tsx`, `src/components/FileUpload.tsx`, `src/components/CodeBlockActions.tsx`, `src/components/VoiceOutput.tsx`
+- New edge functions: `supabase/functions/emma-web-search/index.ts` (stub), `supabase/functions/emma-code-exec/index.ts` (stub)
+- Modified: `App.tsx` (add routes), `EmmaSidebar.tsx` (fix /agents, add rename), `ChatMessage.tsx` (code block actions, TTS button), `ChatInput.tsx` (file upload), `CodeEditor.tsx` (receive from chat), `RightPanel.tsx` (terminal tab), `Dashboard.tsx` (real data), `Index.tsx` (file upload handling)
+- Migration: `organizations`, `org_members`, `user_roles` tables, storage bucket
+
+**Dependencies:** `rehype-highlight`, `highlight.js` (for code block styling)
 
