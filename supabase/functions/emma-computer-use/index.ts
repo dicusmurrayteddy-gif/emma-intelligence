@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.2.0";
-import { Sandbox } from "npm:e2b@2.4.1";
+import { Sandbox } from "npm:@e2b/desktop@2.2.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
