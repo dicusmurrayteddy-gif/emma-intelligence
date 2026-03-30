@@ -450,23 +450,7 @@ export function ComputerUseAgent({ getToken }: ComputerUseAgentProps) {
     );
   };
 
-  const vncUrl = getVncUrl();
-
   const renderDesktopView = () => {
-    // Live VNC stream via iframe
-    if (viewMode === "live" && vncUrl && (isRunning || status === "done")) {
-      return (
-        <iframe
-          src={vncUrl}
-          className="w-full h-full border-0"
-          title="Live Desktop Stream"
-          sandbox="allow-scripts allow-same-origin"
-          allow="clipboard-read; clipboard-write"
-        />
-      );
-    }
-
-    // Fallback: static screenshot
     if (currentScreenshot) {
       return (
         <img
