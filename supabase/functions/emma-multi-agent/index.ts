@@ -89,6 +89,30 @@ serve(async (req) => {
       return new Response(JSON.stringify({ agents: AGENTS.map(a => ({ id: a.id, name: a.name, role: a.role })) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Cross-agent memory sharing: agents can read/write shared memory
+    if (action === "share_memory") {
+      const { memory_key, memory_value, agent_id } = await req.json().catch(() => ({}));
+      if (!memory_key || !memory_value) return new Response(JSON.stringify({ error: "memory_key and memory_value required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      await supabase.from("memory_episodes").insert({
+        user_id: userId, episode_type: "agent_shared",
+        content: `[AGENT:${agent_id || "unknown"}] ${memory_key}: ${memory_value}`,
+        relevance_score: 8,
+        embedding_key: `agent_shared:${memory_key}`,
+      });
+      return new Response(JSON.stringify({ stored: true, key: memory_key }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (action === "recall_shared") {
+      const { data: sharedMemories } = await supabase
+        .from("memory_episodes")
+        .select("content, created_at, embedding_key")
+        .eq("user_id", userId)
+        .eq("episode_type", "agent_shared")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      return new Response(JSON.stringify({ memories: sharedMemories || [] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("multi-agent error:", e);
