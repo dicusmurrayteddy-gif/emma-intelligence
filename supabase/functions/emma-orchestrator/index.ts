@@ -426,13 +426,17 @@ serve(async (req) => {
     }
 
     if (action === "status") {
-      const [memCount, goalCount, benchCount, improvCount, worldModelCount, metacogCount] = await Promise.all([
+      const [memCount, goalCount, benchCount, improvCount, worldModelCount, metacogCount, safetyCount, transferCount, autonomousCount, sensoryCount] = await Promise.all([
         supabase.from("memory_episodes").select("id", { count: "exact", head: true }).eq("user_id", userId),
         supabase.from("goals").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("status", "active"),
         supabase.from("benchmark_runs").select("id", { count: "exact", head: true }).eq("user_id", userId),
         supabase.from("improvement_logs").select("id", { count: "exact", head: true }).eq("user_id", userId),
         supabase.from("world_model_states").select("id", { count: "exact", head: true }).eq("user_id", userId),
         supabase.from("metacognitive_logs").select("id", { count: "exact", head: true }).eq("user_id", userId),
+        supabase.from("safety_verifications").select("id", { count: "exact", head: true }).eq("user_id", userId),
+        supabase.from("transfer_knowledge").select("id", { count: "exact", head: true }).eq("user_id", userId),
+        supabase.from("autonomous_runs").select("id", { count: "exact", head: true }).eq("user_id", userId),
+        supabase.from("sensory_logs").select("id", { count: "exact", head: true }).eq("user_id", userId),
       ]);
       const { data: lastBench } = await supabase.from("benchmark_runs").select("total_score, category_scores, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(1).single();
       const { data: recentGoals } = await supabase.from("goals").select("description, priority, status, goal_type").eq("user_id", userId).order("created_at", { ascending: false }).limit(10);
@@ -442,13 +446,17 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         status: "operational",
         subsystems: {
-          cognition: { status: "active", description: "Multi-agent reasoning with metacognitive monitoring" },
-          memory: { status: "active", episodes: memCount.count || 0 },
+          cognition: { status: "active", description: "Multi-agent reasoning with metacognitive monitoring + formal safety" },
+          memory: { status: "active", episodes: memCount.count || 0, description: "Semantic vector embeddings + keyword retrieval" },
           goals: { status: "active", active: goalCount.count || 0 },
           benchmarks: { status: "active", runs: benchCount.count || 0, lastScore: lastBench?.total_score || null },
           selfImprovement: { status: "active", attempts: improvCount.count || 0 },
           worldModel: { status: "active", versions: worldModelCount.count || 0, latestVersion: latestWorldModel?.version || 0 },
           metacognition: { status: "active", checks: metacogCount.count || 0 },
+          formalSafety: { status: "enforced", verifications: safetyCount.count || 0, description: "Deterministic invariant checks + temporal properties" },
+          transferLearning: { status: "active", patterns: transferCount.count || 0, description: "Embedding-based cross-domain generalization" },
+          autonomousLoop: { status: "active", runs: autonomousCount.count || 0, description: "Background scheduled agent loop" },
+          sensoryGrounding: { status: "active", logs: sensoryCount.count || 0, description: "Visual + text grounding in physical reality" },
           planning: { status: "active" }, tools: { status: "active" }, safety: { status: "enforced" },
         },
         lastBenchmark: lastBench || null, recentGoals: recentGoals || [], recentImprovements: recentImprovements || [],
