@@ -411,6 +411,15 @@ serve(async (req) => {
           entityCount: worldModelUpdate.updatedState.entities?.length || 0,
           beliefCount: worldModelUpdate.updatedState.beliefs?.length || 0,
         },
+        safety: {
+          passed: safetyPassed,
+          invariantsChecked: safetyInvariants.length,
+          violations: safetyViolations.map(v => v.name),
+        },
+        transfer: {
+          knowledgeExtracted: transferKnowledge.length,
+          patterns: transferKnowledge,
+        },
         intrinsicGoals,
         log,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
