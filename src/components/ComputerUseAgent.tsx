@@ -192,6 +192,37 @@ export function ComputerUseAgent({ getToken }: ComputerUseAgentProps) {
     return null;
   }, [getToken, updateStep]);
 
+  const stopKeepalive = useCallback(() => {
+    if (keepaliveRef.current) {
+      clearInterval(keepaliveRef.current);
+      keepaliveRef.current = null;
+    }
+  }, []);
+
+  const startKeepalive = useCallback((sid: string, token: string) => {
+    stopKeepalive();
+    keepaliveRef.current = setInterval(async () => {
+      const session = sessionRef.current;
+      if (!session) return;
+      try {
+        const res = await cuApi("keepalive", {
+          sessionId: session.sid,
+          envdAccessToken: session.token,
+          task: taskRef.current,
+        }, getToken, 15_000);
+        if (res.status === "recreated" && res.sessionId && res.envdAccessToken) {
+          // Sandbox was recreated — update all refs
+          console.log(`[keepalive] Sandbox recreated: ${res.sessionId}`);
+          setSessionId(res.sessionId);
+          setEnvdToken(res.envdAccessToken);
+          sessionRef.current = { sid: res.sessionId, token: res.envdAccessToken };
+        }
+      } catch (e) {
+        console.warn("[keepalive] ping failed:", e);
+      }
+    }, 60_000);
+  }, [getToken, stopKeepalive]);
+
   const startSession = useCallback(async () => {
     if (!task.trim()) { toast.error("Enter a task first"); return; }
     setStatus("starting");
@@ -200,6 +231,7 @@ export function ComputerUseAgent({ getToken }: ComputerUseAgentProps) {
     stepsRef.current = [];
     stepIdRef.current = 0;
     abortRef.current = false;
+    taskRef.current = task.trim();
 
     const startStepId = addStep({ action: "create_sandbox", reasoning: "Creating isolated OS environment...", status: "executing" });
 
@@ -248,8 +280,12 @@ export function ComputerUseAgent({ getToken }: ComputerUseAgentProps) {
 
     setIsBooting(false);
     if (abortRef.current) return;
+
+    // Start keepalive heartbeat
+    startKeepalive(sid, token);
+
     await runAgentLoop(sid, task.trim(), token);
-  }, [task, getToken, addStep, updateStep]);
+  }, [task, getToken, addStep, updateStep, startKeepalive]);
 
   const runAgentLoop = async (sid: string, taskDesc: string, token: string) => {
     const actionHistory: { action: string; reasoning: string }[] = [];
