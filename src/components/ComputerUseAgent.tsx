@@ -565,35 +565,7 @@ export function ComputerUseAgent({ getToken }: ComputerUseAgentProps) {
                     <span className="text-[10px] font-mono text-foreground capitalize">{status}</span>
                     {sessionId && <span className="text-[9px] font-mono text-muted-foreground">{sessionId.slice(0, 12)}…</span>}
                   </div>
-                  <div className="flex items-center gap-1">
-                    {/* View mode toggle */}
-                    <Button
-                      variant={viewMode === "live" ? "default" : "ghost"}
-                      size="sm"
-                      className="h-6 px-2 text-[10px] gap-1"
-                      onClick={() => setViewMode("live")}
-                      title="Live VNC stream"
-                    >
-                      {viewMode === "live" ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                      Live
-                    </Button>
-                    <Button
-                      variant={viewMode === "screenshot" ? "default" : "ghost"}
-                      size="sm"
-                      className="h-6 px-2 text-[10px] gap-1"
-                      onClick={() => setViewMode("screenshot")}
-                      title="Screenshot mode"
-                    >
-                      <ImageIcon className="h-3 w-3" />
-                      Screenshot
-                    </Button>
-
-                    {vncUrl && (
-                      <Button variant="ghost" size="sm" className="h-6 px-1.5" asChild title="Open in new tab">
-                        <a href={vncUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3 w-3" /></a>
-                      </Button>
-                    )}
-
+                   <div className="flex items-center gap-1">
                     {status === "error" && (
                       <Button variant="secondary" size="sm" className="h-6 gap-1 text-[10px]" onClick={startSession}>
                         <RotateCcw className="h-3 w-3" /> Retry
