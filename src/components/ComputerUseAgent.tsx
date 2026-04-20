@@ -183,22 +183,22 @@ export function ComputerUseAgent({ getToken }: ComputerUseAgentProps) {
     setSteps([...stepsRef.current]);
   }, []);
 
-  const recordFrame = useCallback((base64: string) => {
+  const recordFrame = useCallback((base64: string, reasoning?: string, action?: string) => {
     if (!base64) return;
     const last = framesRef.current[framesRef.current.length - 1];
-    // Skip duplicate frames (same base64 within 500ms)
-    if (last && last.base64 === base64) return;
-    framesRef.current.push({ base64, t: Date.now() });
+    // Skip duplicate frames (same base64 + same reasoning)
+    if (last && last.base64 === base64 && last.reasoning === reasoning) return;
+    framesRef.current.push({ base64, t: Date.now(), reasoning: reasoning || "", action: action || "" });
     // Cap frames to prevent runaway memory (max 600 frames ~10min @ 1fps)
     if (framesRef.current.length > 600) framesRef.current.shift();
   }, []);
 
-  const refreshLatestScreenshot = useCallback(async (sid: string, token: string, stepId?: number) => {
+  const refreshLatestScreenshot = useCallback(async (sid: string, token: string, stepId?: number, reasoning?: string, action?: string) => {
     try {
       const latest = await cuApi("screenshot", { sessionId: sid, envdAccessToken: token }, getToken, 20_000);
       if (latest?.screenshot) {
         setCurrentScreenshot(latest.screenshot);
-        recordFrame(latest.screenshot);
+        recordFrame(latest.screenshot, reasoning, action);
         if (stepId) updateStep(stepId, { screenshot: latest.screenshot });
         return latest.screenshot as string;
       }
