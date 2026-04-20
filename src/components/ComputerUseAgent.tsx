@@ -136,6 +136,8 @@ export function ComputerUseAgent({ getToken }: ComputerUseAgentProps) {
   const taskRef = useRef("");
   // Recorded frames for video evidence (base64 PNG + timestamp)
   const framesRef = useRef<{ base64: string; t: number }[]>([]);
+  // Set true when keepalive recreates sandbox so the loop knows to forget stale action history
+  const sandboxResetRef = useRef(false);
   const [isBuildingVideo, setIsBuildingVideo] = useState(false);
 
   useEffect(() => {
