@@ -9,6 +9,39 @@ const corsHeaders = {
 
 const JWKS = createRemoteJWKSet(new URL("https://evident-mink-7.clerk.accounts.dev/.well-known/jwks.json"));
 const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const LLM_STATS_BASE_URL = "https://llm-stats.com";
+
+async function fetchLLMStatsSnapshot() {
+  const apiKey = Deno.env.get("LLM_STATS_API_KEY");
+  if (!apiKey) return null;
+
+  const headers: HeadersInit = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+
+  const [rankingsRes, scoresRes] = await Promise.all([
+    fetch(`${LLM_STATS_BASE_URL}/stats/v1/rankings?category=developer`, { headers }),
+    fetch(`${LLM_STATS_BASE_URL}/stats/v1/scores?benchmark=swe-bench-verified&limit=10`, { headers }),
+  ]);
+
+  if (!rankingsRes.ok && !scoresRes.ok) {
+    console.warn("LLM stats unavailable", rankingsRes.status, scoresRes.status);
+    return null;
+  }
+
+  const rankingsData = rankingsRes.ok ? await rankingsRes.json().catch(() => null) : null;
+  const scoresData = scoresRes.ok ? await scoresRes.json().catch(() => null) : null;
+
+  const rankingEntries = rankingsData?.data || rankingsData?.items || rankingsData?.rankings || [];
+  const scoreEntries = scoresData?.data || scoresData?.items || scoresData?.scores || [];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    topDeveloperModels: Array.isArray(rankingEntries) ? rankingEntries.slice(0, 5) : [],
+    topSweBenchModels: Array.isArray(scoreEntries) ? scoreEntries.slice(0, 5) : [],
+  };
+}
 
 async function getClerkUserId(req: Request): Promise<string | null> {
   const token = req.headers.get("Authorization")?.replace("Bearer ", "");
@@ -63,6 +96,8 @@ serve(async (req) => {
     const { action } = await req.json();
 
     if (action === "get_dashboard") {
+      const llmStatsSnapshot = await fetchLLMStatsSnapshot();
+
       const [
         { count: userCount }, { count: convCount }, { count: msgCount }, { count: memCount },
         { data: recentBenchmarks }, { data: recentImprovements }, { data: patterns }, { data: promptVersions }, { data: insights },
@@ -81,7 +116,7 @@ serve(async (req) => {
       return json({
         stats: { users: userCount || 0, conversations: convCount || 0, messages: msgCount || 0, memoryEpisodes: memCount || 0 },
         recentBenchmarks: recentBenchmarks || [], recentImprovements: recentImprovements || [],
-        patterns: patterns || [], promptVersions: promptVersions || [], insights: insights || [],
+        patterns: patterns || [], promptVersions: promptVersions || [], insights: insights || [], llmStatsSnapshot,
       });
     }
 

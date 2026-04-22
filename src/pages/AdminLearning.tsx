@@ -51,6 +51,15 @@ export default function AdminLearning() {
   if (loading) return <div className="h-screen flex items-center justify-center bg-background"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   const stats = dashboard?.stats || {};
+  const benchmarkHistory = dashboard?.recentBenchmarks || [];
+  const latestScore = benchmarkHistory.length ? Number(benchmarkHistory[0].total_score || 0) : 0;
+  const previousScore = benchmarkHistory.length > 1 ? Number(benchmarkHistory[1].total_score || 0) : null;
+  const benchmarkDelta = previousScore !== null ? latestScore - previousScore : null;
+  const rollingWindow = benchmarkHistory.slice(0, 7).map((b: any) => Number(b.total_score || 0));
+  const rollingAverage = rollingWindow.length ? Math.round((rollingWindow.reduce((sum: number, value: number) => sum + value, 0) / rollingWindow.length) * 10) / 10 : 0;
+  const llmStatsSnapshot = dashboard?.llmStatsSnapshot;
+  const topDeveloperModels = llmStatsSnapshot?.topDeveloperModels || [];
+  const topSweBenchModels = llmStatsSnapshot?.topSweBenchModels || [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -92,6 +101,28 @@ export default function AdminLearning() {
 
           <TabsContent value="analytics" className="space-y-4">
             <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" />Automated Testing Metrics</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="p-3 bg-secondary/50 rounded-lg">
+                    <p className="text-xs text-muted-foreground">Latest Score</p>
+                    <p className="text-2xl font-bold">{latestScore}/100</p>
+                  </div>
+                  <div className="p-3 bg-secondary/50 rounded-lg">
+                    <p className="text-xs text-muted-foreground">7-Run Average</p>
+                    <p className="text-2xl font-bold">{rollingAverage}/100</p>
+                  </div>
+                  <div className="p-3 bg-secondary/50 rounded-lg">
+                    <p className="text-xs text-muted-foreground">Change vs Previous</p>
+                    <p className={`text-2xl font-bold ${benchmarkDelta !== null && benchmarkDelta < 0 ? "text-destructive" : "text-green-500"}`}>
+                      {benchmarkDelta !== null ? `${benchmarkDelta >= 0 ? "+" : ""}${benchmarkDelta}` : "—"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" />Recent Benchmarks</CardTitle></CardHeader>
               <CardContent>
                 {dashboard?.recentBenchmarks?.length ? (
@@ -104,6 +135,37 @@ export default function AdminLearning() {
                     ))}
                   </div>
                 ) : <p className="text-muted-foreground text-sm">No benchmark data yet.</p>}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle>LLM Stats Developer Benchmark Snapshot</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                {llmStatsSnapshot ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      Auto-fetched from llm-stats.com at {new Date(llmStatsSnapshot.generatedAt).toLocaleString()}.
+                    </p>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Top Developer Ranking Models</p>
+                      {topDeveloperModels.length ? topDeveloperModels.map((model: any, idx: number) => (
+                        <div key={`dev-${idx}`} className="flex justify-between py-2 border-b border-border last:border-0 text-sm">
+                          <span>{model.model_name || model.model || model.id || `Model #${idx + 1}`}</span>
+                          <Badge variant="outline">{Number(model.score || model.rating || 0).toFixed(1)}</Badge>
+                        </div>
+                      )) : <p className="text-muted-foreground text-sm">No developer ranking data returned.</p>}
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Top SWE-Bench Models</p>
+                      {topSweBenchModels.length ? topSweBenchModels.map((model: any, idx: number) => (
+                        <div key={`swe-${idx}`} className="flex justify-between py-2 border-b border-border last:border-0 text-sm">
+                          <span>{model.model_name || model.model || model.id || `Model #${idx + 1}`}</span>
+                          <Badge variant="outline">{Number(model.score || model.value || 0).toFixed(1)}</Badge>
+                        </div>
+                      )) : <p className="text-muted-foreground text-sm">No SWE-Bench data returned.</p>}
+                    </div>
+                  </>
+                ) : <p className="text-muted-foreground text-sm">LLM Stats API snapshot unavailable. Add LLM_STATS_API_KEY to enable this feed.</p>}
               </CardContent>
             </Card>
             <Button onClick={() => runAction("Aggregate Data", aggregateData)} disabled={!!actionLoading}>
