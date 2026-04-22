@@ -1,18 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.2.0";
+import { guardRequest, jsonResponse, safeError } from "../_shared/request-guard.ts";
 
-const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
-const JWKS = createRemoteJWKSet(new URL("https://evident-mink-7.clerk.accounts.dev/.well-known/jwks.json"));
-
-async function getClerkUserId(req: Request): Promise<string | null> {
-  const token = req.headers.get("Authorization")?.replace("Bearer ", "");
-  if (!token || token.length < 20) return null;
-  if (token === Deno.env.get("SUPABASE_ANON_KEY")) return null;
-  try { const { payload } = await jwtVerify(token, JWKS); return (payload.sub as string) || null; } catch { return null; }
-}
-
-const DANGEROUS_PATTERNS = [/eval\s*\(/i, /Function\s*\(/i, /require\s*\(\s*['"]child_process['"]\s*\)/i, /exec\s*\(/i, /spawn\s*\(/i, /rm\s+-rf/i, /DROP\s+TABLE/i, /DELETE\s+FROM\s+(?!.*WHERE)/i, /TRUNCATE/i, /process\.env/i, /Deno\.env/i, /__proto__/i, /constructor\s*\[/i];
+const DANGEROUS_PATTERNS = [/eval\s*\(/i, /Function\s*\(/i, /require\s*\(\s*['\"]child_process['\"]\s*\)/i, /exec\s*\(/i, /spawn\s*\(/i, /rm\s+-rf/i, /DROP\s+TABLE/i, /DELETE\s+FROM\s+(?!.*WHERE)/i, /TRUNCATE/i, /process\.env/i, /Deno\.env/i, /__proto__/i, /constructor\s*\[/i];
 
 function validateCode(code: string) {
   const violations: string[] = [];
@@ -30,31 +19,36 @@ function validatePrompt(mod: string) {
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  try {
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const userId = await getClerkUserId(req);
-    if (!userId) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  const guard = await guardRequest(req, {
+    functionName: "emma-safety",
+    actionValidators: {
+      validate: (body) => typeof body.content === "string" && typeof body.contentType === "string" ? null : "validate requires content and contentType",
+      health: () => null,
+    },
+    rateLimit: { windowMs: 60_000, max: 60 },
+  });
+  if (guard.response) return guard.response;
 
-    const { action, content, contentType } = await req.json();
+  try {
+    const { action, body, userId, userClient } = guard;
 
     if (action === "validate") {
-      const result = contentType === "code" ? validateCode(content || "") : contentType === "prompt" ? validatePrompt(content || "") : { safe: true, violations: [] };
-      if (!result.safe) await supabase.from("improvement_logs").insert({ user_id: userId, improvement_type: "safety_block", description: `Blocked ${contentType}: ${result.violations.join("; ")}`, accepted: false, diff_content: (content || "").slice(0, 500) });
-      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const content = (body.content as string) || "";
+      const contentType = (body.contentType as string) || "";
+      const result = contentType === "code" ? validateCode(content) : contentType === "prompt" ? validatePrompt(content) : { safe: true, violations: [] };
+      if (!result.safe && userId) {
+        await userClient.from("improvement_logs").insert({ user_id: userId, improvement_type: "safety_block", description: `Blocked ${contentType}: ${result.violations.join("; ")}`, accepted: false, diff_content: content.slice(0, 500) });
+      }
+      return jsonResponse(result as unknown as Record<string, unknown>);
     }
 
-    if (action === "health") {
-      const checks: Record<string, any> = {};
-      try { const { count } = await supabase.from("benchmark_questions").select("id", { count: "exact", head: true }); checks.database = { status: "healthy", detail: `${count} questions` }; } catch { checks.database = { status: "degraded" }; }
-      try { const { count } = await supabase.from("memory_episodes").select("id", { count: "exact", head: true }).eq("user_id", userId); checks.memory = { status: "healthy", detail: `${count} episodes` }; } catch { checks.memory = { status: "degraded" }; }
-      checks.ai_gateway = Deno.env.get("LOVABLE_API_KEY") ? { status: "healthy" } : { status: "critical" };
-      const allHealthy = Object.values(checks).every((c: any) => c.status === "healthy");
-      return new Response(JSON.stringify({ overall: allHealthy ? "healthy" : "degraded", checks, timestamp: new Date().toISOString() }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const checks: Record<string, unknown> = {};
+    try { const { count } = await guard.adminClient.from("benchmark_questions").select("id", { count: "exact", head: true }); checks.database = { status: "healthy", detail: `${count} questions` }; } catch { checks.database = { status: "degraded" }; }
+    try { const { count } = await userClient.from("memory_episodes").select("id", { count: "exact", head: true }).eq("user_id", userId); checks.memory = { status: "healthy", detail: `${count} episodes` }; } catch { checks.memory = { status: "degraded" }; }
+    checks.ai_gateway = Deno.env.get("LOVABLE_API_KEY") ? { status: "healthy" } : { status: "critical" };
+    const allHealthy = Object.values(checks).every((c: any) => c.status === "healthy");
+    return jsonResponse({ overall: allHealthy ? "healthy" : "degraded", checks, timestamp: new Date().toISOString() });
   } catch (e) {
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return safeError("emma-safety", e);
   }
 });

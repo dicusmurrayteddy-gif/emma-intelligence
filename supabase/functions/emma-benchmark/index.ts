@@ -1,18 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { guardRequest, jsonResponse, safeError } from "../_shared/request-guard.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.2.0";
 import { confidenceIntervalFromScores, scorePrimary, scoreWithDifficulty, type BenchmarkQuestionRecord } from "./benchmark-service.ts";
 
-const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
-const JWKS = createRemoteJWKSet(new URL("https://evident-mink-7.clerk.accounts.dev/.well-known/jwks.json"));
 const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-
-async function getClerkUserId(req: Request): Promise<string | null> {
-  const token = req.headers.get("Authorization")?.replace("Bearer ", "");
-  if (!token || token.length < 20) return null;
-  if (token === Deno.env.get("SUPABASE_ANON_KEY")) return null;
-  try { const { payload } = await jwtVerify(token, JWKS); return (payload.sub as string) || null; } catch { return null; }
-}
 
 async function callAI(apiKey: string, system: string, userContent: string): Promise<string> {
   const resp = await fetch(AI_GATEWAY_URL, {
@@ -36,13 +28,28 @@ async function getAIAnswer(apiKey: string, question: string, systemPrompt: strin
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const guard = await guardRequest(req, {
+    functionName: "emma-benchmark",
+    actionValidators: {
+      run: () => null,
+      history: () => null,
+    },
+    rateLimit: { windowMs: 60_000, max: 20 },
+  });
+  if (guard.response) return guard.response;
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const userId = await getClerkUserId(req);
-    if (!userId) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const userId = guard.userId!;
+    const supabase = guard.userClient;
+
+    const { action, category, systemPromptVersion } = guard.body as { action: string; category?: string; systemPromptVersion?: number };
+
+    if (action === "run") {
+      let query = supabase.from("benchmark_questions").select("*");
+      if (category && category !== "all") query = query.eq("category", category);
+      const { data: questions } = await query;
+      if (!questions?.length) return jsonResponse({ error: "No benchmark questions" }, 404);
 
     const { action, category, systemPromptVersion, split, evaluationTier, seed, timeBudgetMs, includePrivate = false, includeAdversarial = true, includeSecondaryLlmJudge = false } = await req.json();
 
@@ -181,6 +188,40 @@ serve(async (req) => {
       const previousScore = prevRuns && prevRuns.length > 1 ? Number(prevRuns[1].total_score) : null;
       const delta = previousScore !== null ? normalizedScore - previousScore : null;
 
+      // A/B testing: if we have enough runs, auto-select best prompt
+      let abTestResult: any = null;
+      if (prevRuns && prevRuns.length >= 3) {
+        const versionScores: Record<number, number[]> = {};
+        for (const r of prevRuns) {
+          const v = r.system_prompt_version || 1;
+          if (!versionScores[v]) versionScores[v] = [];
+          versionScores[v].push(Number(r.total_score));
+        }
+        const versionAvgs = Object.entries(versionScores).map(([v, scores]) => ({
+          version: Number(v), avg: scores.reduce((s, x) => s + x, 0) / scores.length, runs: scores.length,
+        })).sort((a, b) => b.avg - a.avg);
+
+        abTestResult = { variants: versionAvgs, bestVersion: versionAvgs[0]?.version };
+
+        // Auto-activate best prompt if it has 2+ runs and beats current by 5+
+        if (versionAvgs.length >= 2 && versionAvgs[0].runs >= 2) {
+          const best = versionAvgs[0];
+          const current = versionAvgs.find(v => v.version === promptVersion);
+          if (current && best.version !== promptVersion && best.avg - current.avg >= 5) {
+            await supabase.from("prompt_evolutions").update({ active: false }).eq("active", true);
+            await supabase.from("prompt_evolutions").update({ active: true }).eq("version", best.version);
+            abTestResult.autoSwitched = true;
+            abTestResult.switchedTo = best.version;
+          }
+        }
+      }
+
+      return jsonResponse({ score: normalizedScore, previousScore, delta, promptVersion, categoryScores: catScoresNormalized, results, abTest: abTestResult, message: delta !== null ? `SCORE: ${previousScore} → ${normalizedScore} (${delta >= 0 ? "+" : ""}${delta}) [Prompt v${promptVersion}]` : `SCORE: ${normalizedScore}/100 [Prompt v${promptVersion}]` });
+    }
+
+    if (action === "history") {
+      const { data: runs } = await supabase.from("benchmark_runs").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50);
+      return jsonResponse({ runs: runs || [] });
       return new Response(JSON.stringify({
         score: normalizedScore,
         previousScore,
@@ -206,9 +247,8 @@ serve(async (req) => {
       return new Response(JSON.stringify({ runs: runs || [] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return jsonResponse({ error: "Invalid action" }, 400);
   } catch (e) {
-    console.error("benchmark error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return safeError("emma-benchmark", e);
   }
 });
