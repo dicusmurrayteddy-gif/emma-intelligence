@@ -520,17 +520,44 @@ export function ComputerUseAgent({ getToken }: ComputerUseAgentProps) {
         const execReasoning = `${decision.action}: ${decision.reasoning}`;
 
         if (decision.action !== "wait") {
+          // Client-side scope pre-check for open_url
+          if (decision.action === "open_url" && engagementRef.current.scopeLockEnabled) {
+            const check = isUrlInScope(decision.params?.url || "", {
+              inScope: engagementRef.current.inScope,
+              outOfScope: engagementRef.current.outOfScope,
+            });
+            if (!check.allowed) {
+              addStep({
+                action: "🚫 scope_block",
+                reasoning: `Blocked navigation to ${decision.params?.url} — ${check.reason}`,
+                status: "blocked",
+                guardrail: "scope",
+              });
+              actionHistory.push({ action: "scope_block", reasoning: `Blocked: ${check.reason}` });
+              await new Promise((r) => setTimeout(r, 1000));
+              continue;
+            }
+          }
           const execStepId = addStep({ action: decision.action, reasoning: `Executing: ${decision.action}`, status: "executing" });
           latestStepId = execStepId;
           try {
             const execResult = await cuApi("execute", {
               sessionId: curSid, actionType: decision.action,
               params: decision.params, envdAccessToken: curToken,
+              engagement: engagementRef.current,
             }, getToken, 30_000);
-            updateStep(execStepId, { status: "done", reasoning: `${decision.action} executed` });
+            if (execResult?.blocked) {
+              updateStep(execStepId, {
+                status: "blocked",
+                reasoning: `🚫 ${execResult.error}`,
+                guardrail: execResult.guardrail,
+              });
+              actionHistory.push({ action: "blocked", reasoning: execResult.error });
+            } else {
+              updateStep(execStepId, { status: "done", reasoning: `${decision.action} executed` });
+            }
             if (execResult?.screenshot) {
               setCurrentScreenshot(execResult.screenshot);
-              // Post-action frame — tag with the action that produced this state
               recordFrame(execResult.screenshot, `After: ${execReasoning}`, decision.action);
               updateStep(execStepId, { screenshot: execResult.screenshot });
             }
