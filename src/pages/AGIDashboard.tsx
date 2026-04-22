@@ -216,7 +216,9 @@ export default function AGIDashboard() {
                 {/* System Status */}
                 <div className="emma-surface-elevated emma-glow-border rounded-xl p-4 flex items-center gap-4 flex-wrap">
                   <Activity className="h-4 w-4 text-primary animate-pulse" />
-                  <span className="text-xs font-mono text-foreground">COGNITIVE LOOP: ACTIVE</span>
+                  <span className="text-xs font-mono text-foreground">
+                    COGNITIVE LOOP: {health?.overall === "healthy" ? "validated sample available" : "awaiting validated sample"}
+                  </span>
                   <div className="h-4 w-px bg-border" />
                   {systemStatus && Object.entries(systemStatus.subsystems).map(([name, sub]) => (
                     <span key={name} className="text-[10px] font-mono text-muted-foreground">
@@ -283,18 +285,21 @@ export default function AGIDashboard() {
                   <div className="space-y-1.5">
                     {assessment.map((item) => (
                       <div key={item.category} className="flex items-center gap-3 py-1">
-                        {item.status === "implemented" ? <CheckCircle2 className="h-3.5 w-3.5 text-green-400 flex-shrink-0" /> :
-                         item.status === "partial" ? <AlertTriangle className="h-3.5 w-3.5 text-accent flex-shrink-0" /> :
+                        {item.tier === "validated" ? <CheckCircle2 className="h-3.5 w-3.5 text-green-400 flex-shrink-0" /> :
+                         item.tier === "prototype" ? <AlertTriangle className="h-3.5 w-3.5 text-accent flex-shrink-0" /> :
                          <XCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />}
                         <span className="text-xs text-foreground w-40 flex-shrink-0">{item.category}</span>
-                        <span className="text-[10px] text-muted-foreground flex-1">{item.detail}</span>
+                        <span className="text-[10px] text-muted-foreground flex-1">
+                          {item.detail} • Tier: <span className="uppercase">{item.tier}</span> • Confidence band: {item.confidenceBand} • Freshness: {item.freshness}
+                          {item.caveat ? ` • Caveat: ${item.caveat}` : ""}
+                        </span>
                       </div>
                     ))}
                   </div>
                   <div className="mt-3 pt-3 border-t border-border flex items-center gap-2">
                     <span className="text-xs font-medium text-foreground">Overall:</span>
                     <span className="text-xs font-mono text-primary">
-                      {assessment.filter(a => a.status === "implemented").length}/{assessment.length} fully implemented
+                      {assessment.filter(a => a.tier === "validated").length}/{assessment.length} validated tiers
                     </span>
                   </div>
                 </div>
@@ -822,144 +827,65 @@ export default function AGIDashboard() {
   );
 }
 
+type EvidenceTier = "experimental" | "prototype" | "validated";
+
 interface AssessmentItem {
   category: string;
-  status: "implemented" | "partial" | "missing";
+  tier: EvidenceTier;
+  confidenceBand: string;
+  freshness: string;
+  caveat?: string;
   detail: string;
+}
+
+function deriveTierConfidenceAndFreshness(
+  score: number,
+  health: HealthData | null,
+): { tier: EvidenceTier; confidenceBand: string; freshness: string } {
+  const tier: EvidenceTier = score >= 0.75 ? "validated" : score >= 0.45 ? "prototype" : "experimental";
+  const confidenceBand = score >= 0.75 ? "70–90%" : score >= 0.45 ? "45–70%" : "20–45%";
+  const freshness = health?.timestamp ? new Date(health.timestamp).toLocaleString() : "No recent validated timestamp";
+  return { tier, confidenceBand, freshness };
 }
 
 function buildAssessment(systemStatus: SystemStatusData | null, health: HealthData | null): AssessmentItem[] {
   const s = systemStatus?.subsystems || {};
+  const makeItem = (
+    category: string,
+    score: number,
+    detail: string,
+    caveat?: string,
+  ): AssessmentItem => {
+    const { tier, confidenceBand, freshness } = deriveTierConfidenceAndFreshness(score, health);
+    return { category, tier, confidenceBand, freshness, caveat, detail };
+  };
+
   return [
-    {
-      category: "Core Cognition",
-      status: s.cognition ? "implemented" : "partial",
-      detail: s.cognition ? "8-phase loop: perceive → recall → state → goals → plan → execute → evaluate → improve" : "Awaiting status check",
-    },
-    {
-      category: "Persistent Memory",
-      status: s.memory && (s.memory.episodes || 0) >= 0 ? "implemented" : "partial",
-      detail: `Episodic/semantic/procedural memory. ${s.memory?.episodes || 0} episodes stored. Retrieval by relevance.`,
-    },
-    {
-      category: "Self-Model",
-      status: "implemented",
-      detail: "Tracks capabilities, tools, performance, objectives, constraints via status endpoint",
-    },
-    {
-      category: "Goal Generation",
-      status: s.goals ? "implemented" : "partial",
-      detail: `Auto-generates from benchmark weaknesses and low-quality outputs. ${s.goals?.active || 0} active goals.`,
-    },
-    {
-      category: "Planning Engine",
-      status: s.planning ? "implemented" : "partial",
-      detail: "Tree-based task decomposition. AI-generated substep plans. Replanning on failure.",
-    },
-    {
-      category: "Tool Use",
-      status: s.tools ? "implemented" : "partial",
-      detail: `${s.tools?.available?.length || 0} tools: ${s.tools?.available?.join(", ") || "none"}`,
-    },
-    {
-      category: "Benchmarks",
-      status: s.benchmarks && (s.benchmarks.runs || 0) > 0 ? "implemented" : s.benchmarks ? "partial" : "missing",
-      detail: `${s.benchmarks?.runs || 0} runs. Categories: reasoning, coding, planning, MMLU. Last: ${s.benchmarks?.lastScore || "N/A"}/100`,
-    },
-    {
-      category: "Self-Improvement",
-      status: s.selfImprovement ? "implemented" : "partial",
-      detail: `Analyze → propose → sandbox → benchmark → accept/reject. ${s.selfImprovement?.attempts || 0} attempts.`,
-    },
-    {
-      category: "Multi-Agent",
-      status: "implemented",
-      detail: "4 cognitive agents: Builder, Critic, Skeptic, Inventor. Real adversarial debate.",
-    },
-    {
-      category: "World Model",
-      status: s.worldModel ? "implemented" : "partial",
-      detail: `Persistent internal representation. ${(s.worldModel as any)?.versions || 0} versions. Entities, relations, beliefs, temporal events.`,
-    },
-    {
-      category: "Metacognition",
-      status: s.metacognition ? "implemented" : "partial",
-      detail: `Real-time quality monitoring per cognitive phase. ${(s.metacognition as any)?.checks || 0} checks. Auto-redirect on low quality.`,
-    },
-    {
-      category: "Intrinsic Motivation",
-      status: "implemented",
-      detail: "Curiosity-driven goal generation. Open-ended objectives beyond reactive improvement.",
-    },
-    {
-      category: "Vector Embeddings",
-      status: "implemented",
-      detail: "AI-enhanced semantic embeddings with n-gram hash fallback. Cosine similarity + keyword retrieval.",
-    },
-    {
-      category: "Belief Decay",
-      status: "implemented",
-      detail: "Auto-decay stale beliefs (5% @24h, 15% @72h). Contradiction resolution removes lowest-confidence opposing beliefs.",
-    },
-    {
-      category: "Metacog Trends",
-      status: "implemented",
-      detail: "Cross-loop rolling averages per phase. Adaptive quality thresholds rise when performance declines.",
-    },
-    {
-      category: "Novelty Detection",
-      status: "implemented",
-      detail: "Embedding-based novelty scoring. Boredom modeling biases exploration toward unexplored domains. >80% similar goals filtered.",
-    },
-    {
-      category: "Multi-Modal Fusion",
-      status: "implemented",
-      detail: "Cross-references text + visual + audio grounding. Unified fused representation with consistency scoring.",
-    },
-    {
-      category: "Formal Safety",
-      status: s.formalSafety ? "implemented" : "partial",
-      detail: `Deterministic invariant checks + temporal property verification. ${(s.formalSafety as any)?.verifications || 0} verifications. No LLM dependency.`,
-    },
-    {
-      category: "Transfer Learning",
-      status: s.transferLearning ? "implemented" : "partial",
-      detail: `Embedding-based cross-domain generalization. ${(s.transferLearning as any)?.patterns || 0} knowledge patterns stored.`,
-    },
-    {
-      category: "Autonomous Loop",
-      status: "implemented",
-      detail: `pg_cron scheduled every 15min. ${(s.autonomousLoop as any)?.runs || 0} autonomous runs. Proactive goal advancement.`,
-    },
-    {
-      category: "Sensory Grounding",
-      status: s.sensoryGrounding ? "implemented" : "partial",
-      detail: `Multi-modal perception: visual + text grounding. ${(s.sensoryGrounding as any)?.logs || 0} sensory logs. Physical/spatial/temporal understanding.`,
-    },
-    {
-      category: "Safety",
-      status: s.safety ? "implemented" : "partial",
-      detail: "Dangerous pattern detection, prompt injection blocking, resource limits, rollback on failure.",
-    },
-    {
-      category: "Observability",
-      status: "implemented",
-      detail: "Structured logs per cognitive phase. Decision traces. Benchmark history. Improvement logs.",
-    },
-    {
-      category: "Local Execution",
-      status: health?.overall === "healthy" ? "implemented" : "partial",
-      detail: `Health: ${health?.overall || "unknown"}. All subsystems via edge functions.`,
-    },
-    {
-      category: "Failure Recovery",
-      status: "implemented",
-      detail: "Rollback on unsafe modifications. Error boundaries. Quality gating on outputs.",
-    },
-    {
-      category: "Code Quality",
-      status: "implemented",
-      detail: "TypeScript strict. Modular edge functions. Semantic design tokens. No placeholders.",
-    },
+    makeItem("Core Cognition", s.cognition ? 0.7 : 0.3, s.cognition ? "8-phase loop observed in recent status output." : "Awaiting recent validated cognition metrics."),
+    makeItem("Persistent Memory", Math.min((s.memory?.episodes || 0) / 100, 0.85), `Episodic/semantic/procedural memory. ${s.memory?.episodes || 0} episodes tracked.`),
+    makeItem("Self-Model", s.cognition ? 0.6 : 0.35, "Self-description provided by status endpoint (capabilities/tools/objectives).", "Primarily self-reported instrumentation."),
+    makeItem("Goal Generation", Math.min((s.goals?.active || 0) / 10, 0.8), `${s.goals?.active || 0} active goals in latest sample.`),
+    makeItem("Planning Engine", s.planning ? 0.62 : 0.35, "Tree-based decomposition and replanning signals present."),
+    makeItem("Tool Use", Math.min((s.tools?.available?.length || 0) / 8, 0.8), `${s.tools?.available?.length || 0} tools listed in current status.`),
+    makeItem("Benchmarks", (s.benchmarks?.runs || 0) > 0 ? 0.75 : 0.25, `${s.benchmarks?.runs || 0} benchmark runs. Last score: ${s.benchmarks?.lastScore || "N/A"}/100.`),
+    makeItem("Self-Improvement", Math.min((s.selfImprovement?.attempts || 0) / 20, 0.8), `${s.selfImprovement?.attempts || 0} recorded improvement attempts.`),
+    makeItem("Multi-Agent", s.cognition ? 0.55 : 0.3, "Builder/Critic/Skeptic/Inventor roles declared in architecture.", "Execution quality currently derived from internal evaluations."),
+    makeItem("World Model", s.worldModel ? 0.65 : 0.3, `${(s.worldModel as any)?.versions || 0} world-model versions observed.`),
+    makeItem("Metacognition", s.metacognition ? 0.68 : 0.3, `${(s.metacognition as any)?.checks || 0} metacognitive checks logged.`),
+    makeItem("Intrinsic Motivation", s.goals ? 0.52 : 0.25, "Curiosity goals indicated in status and loop outputs.", "Novelty utility is currently self-judged."),
+    makeItem("Vector Embeddings", s.memory ? 0.58 : 0.25, "Semantic retrieval path available through memory stack."),
+    makeItem("Belief Decay", s.worldModel ? 0.57 : 0.2, "Decay and contradiction handling appear in world-model maintenance."),
+    makeItem("Metacog Trends", s.metacognition ? 0.6 : 0.25, "Rolling trend metrics available when loop telemetry is present."),
+    makeItem("Novelty Detection", s.goals ? 0.5 : 0.2, "Novelty bias used for exploratory goal generation.", "Based on synthetic/self-generated similarity heuristics."),
+    makeItem("Multi-Modal Fusion", s.sensoryGrounding ? 0.55 : 0.2, "Cross-modal grounding paths are present in subsystem declarations.", "No external validation dataset attached in this view."),
+    makeItem("Formal Safety", s.formalSafety ? 0.72 : 0.3, `${(s.formalSafety as any)?.verifications || 0} deterministic verifications logged.`),
+    makeItem("Transfer Learning", s.transferLearning ? 0.62 : 0.25, `${(s.transferLearning as any)?.patterns || 0} cross-domain patterns stored.`),
+    makeItem("Autonomous Loop", Math.min(((s.autonomousLoop as any)?.runs || 0) / 30, 0.82), `${(s.autonomousLoop as any)?.runs || 0} autonomous runs observed.`),
+    makeItem("Sensory Grounding", s.sensoryGrounding ? 0.58 : 0.2, `${(s.sensoryGrounding as any)?.logs || 0} sensory logs in latest status.`),
+    makeItem("Safety", s.safety ? 0.66 : 0.28, "Safety checks and rollback guards are reported in status."),
+    makeItem("Observability", health ? 0.74 : 0.35, "Health checks and structured subsystem telemetry are available."),
+    makeItem("Local Execution", health?.overall === "healthy" ? 0.78 : 0.45, `Health state: ${health?.overall || "unknown"}.`),
+    makeItem("Failure Recovery", s.safety ? 0.63 : 0.3, "Rollback/error-boundary behavior is reported."),
+    makeItem("Code Quality", 0.5, "Type and modularity claims are inferred from implementation patterns.", "No independent quality audit linked in dashboard."),
   ];
 }
