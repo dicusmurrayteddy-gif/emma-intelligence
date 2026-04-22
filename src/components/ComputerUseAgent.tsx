@@ -1026,6 +1026,7 @@ ${stepsHtml}
       case "executing": return <Loader2 className="h-3 w-3 animate-spin text-primary" />;
       case "done": return <CheckCircle2 className="h-3 w-3 text-green-500" />;
       case "error": return <AlertCircle className="h-3 w-3 text-destructive" />;
+      case "blocked": return <ShieldAlert className="h-3 w-3 text-amber-500" />;
       default: return <div className="h-3 w-3 rounded-full bg-muted" />;
     }
   };
