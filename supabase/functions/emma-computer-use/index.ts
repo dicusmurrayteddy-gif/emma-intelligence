@@ -863,13 +863,25 @@ serve(async (req) => {
       }
 
       case "execute": {
-        const { sessionId, actionType, params, envdAccessToken } = body;
+        const { sessionId, actionType, params, envdAccessToken, engagement } = body;
         if (!sessionId) return json({ error: "Missing sessionId" }, 400);
 
         const sandbox = await getSandbox(sessionId, envdAccessToken);
         let result: any = { success: true };
 
+        // === Scope guardrail: block out-of-scope navigation ===
         if (actionType === "open_url") {
+          const scope = scopeAllowed(params?.url || "", engagement);
+          if (!scope.allowed) {
+            try { const { base64 } = await captureScreenshotData(sandbox); result.screenshot = base64; } catch {}
+            return json({
+              success: false,
+              blocked: true,
+              error: `Scope violation — ${scope.reason}`,
+              guardrail: "scope",
+              ...result,
+            });
+          }
           await runCommand(
             sandbox, "bash",
             ["-c", `xdg-open ${JSON.stringify(params.url)} >/tmp/xdg-open.log 2>&1 &`],
@@ -877,6 +889,30 @@ serve(async (req) => {
           );
         } else if (actionType === "wait") {
           result = { success: true, waited: params.seconds || 2 };
+        } else if (actionType === "type") {
+          // === Destructive payload guard ===
+          const dest = isDestructive(params?.text || "");
+          if (dest.destructive && !engagement?.allowExploitation) {
+            try { const { base64 } = await captureScreenshotData(sandbox); result.screenshot = base64; } catch {}
+            return json({
+              success: false,
+              blocked: true,
+              error: `Destructive payload blocked (matched: ${dest.matched}). Enable "Allow exploitation" in engagement settings to bypass.`,
+              guardrail: "destructive_payload",
+              ...result,
+            });
+          }
+          const xdoCmd = buildXdotoolCommand(actionType, params);
+          if (xdoCmd) {
+            try {
+              const cmdResult = await runCommand(sandbox, xdoCmd.cmd, xdoCmd.args, 15);
+              if (cmdResult.exitCode !== 0) {
+                result = { success: false, error: cmdResult.stderr || cmdResult.stdout || "Command failed" };
+              }
+            } catch (e) {
+              result = { success: false, error: e instanceof Error ? e.message : "Command execution failed" };
+            }
+          }
         } else {
           const xdoCmd = buildXdotoolCommand(actionType, params);
           if (xdoCmd) {
@@ -893,7 +929,7 @@ serve(async (req) => {
 
         // Always capture a post-action screenshot so frontend stays in sync
         try {
-          await new Promise((r) => setTimeout(r, 500)); // brief delay for UI to update
+          await new Promise((r) => setTimeout(r, 500));
           const { base64: screenshot } = await captureScreenshotData(sandbox);
           result.screenshot = screenshot;
         } catch (e) {
@@ -901,6 +937,61 @@ serve(async (req) => {
         }
 
         return json(result);
+      }
+
+      case "recon": {
+        const { sessionId, envdAccessToken, tool, target, engagement } = body;
+        if (!sessionId || !tool || !target) return json({ error: "Missing sessionId/tool/target" }, 400);
+
+        const urlTarget = target.startsWith("http") ? target : `https://${target}`;
+        if (tool !== "dns_lookup" && tool !== "whois") {
+          const scope = scopeAllowed(urlTarget, engagement);
+          if (!scope.allowed) return json({ error: `Scope violation — ${scope.reason}`, guardrail: "scope" }, 403);
+        }
+
+        const sandbox = await getSandbox(sessionId, envdAccessToken);
+        const safe = JSON.stringify(target);
+        const safeUrl = JSON.stringify(urlTarget);
+        let cmd = "";
+        switch (tool) {
+          case "dns_lookup":       cmd = `dig +short ${safe} ANY 2>&1 || host ${safe}`; break;
+          case "whois":            cmd = `whois ${safe} 2>&1 | head -60`; break;
+          case "http_headers":     cmd = `curl -sSI --max-time 15 ${safeUrl}`; break;
+          case "robots_txt":       cmd = `curl -sS --max-time 10 ${safeUrl}/robots.txt | head -100`; break;
+          case "sitemap_fetch":    cmd = `curl -sS --max-time 10 ${safeUrl}/sitemap.xml | head -200`; break;
+          case "tech_fingerprint": cmd = `curl -sSI --max-time 15 ${safeUrl} | grep -iE 'server|x-powered-by|x-aspnet|x-generator|via'`; break;
+          default: return json({ error: `Unknown recon tool: ${tool}` }, 400);
+        }
+        try {
+          const r = await runCommand(sandbox, "bash", ["-c", cmd], 25);
+          return json({ tool, target, output: (r.stdout + (r.stderr ? `\n[stderr]\n${r.stderr}` : "")).slice(0, 4000), exitCode: r.exitCode });
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "Recon failed" }, 500);
+        }
+      }
+
+      case "http_capture": {
+        const { sessionId, envdAccessToken, url, method = "GET", headers = {}, requestBody, engagement } = body;
+        if (!sessionId || !url) return json({ error: "Missing sessionId/url" }, 400);
+        const scope = scopeAllowed(url, engagement);
+        if (!scope.allowed) return json({ error: `Scope violation — ${scope.reason}`, guardrail: "scope" }, 403);
+
+        const sandbox = await getSandbox(sessionId, envdAccessToken);
+        const headerArgs = Object.entries(headers as Record<string, string>)
+          .map(([k, v]) => `-H ${JSON.stringify(`${k}: ${v}`)}`).join(" ");
+        const bodyArg = requestBody ? `--data ${JSON.stringify(requestBody)}` : "";
+        const cmd = `curl -sS -i -X ${JSON.stringify(method)} --max-time 25 ${headerArgs} ${bodyArg} ${JSON.stringify(url)}`;
+        try {
+          const r = await runCommand(sandbox, "bash", ["-c", cmd], 30);
+          const raw = r.stdout || r.stderr || "";
+          const splitIdx = raw.indexOf("\r\n\r\n");
+          const responseHeaders = splitIdx >= 0 ? raw.slice(0, splitIdx) : raw;
+          const responseBody = splitIdx >= 0 ? raw.slice(splitIdx + 4) : "";
+          const requestText = `${method} ${url}\n${Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join("\n")}${requestBody ? `\n\n${requestBody}` : ""}`;
+          return json({ url, method, request: requestText, responseHeaders, responseBody: responseBody.slice(0, 4000) });
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "Capture failed" }, 500);
+        }
       }
 
       case "keepalive": {
