@@ -1031,7 +1031,7 @@ serve(async (req) => {
       }
 
       case "think": {
-        const { sessionId, task, actionHistory, userMessage, envdAccessToken } = body;
+        const { sessionId, task, actionHistory, userMessage, envdAccessToken, engagement } = body;
         if (!sessionId || !task) return json({ error: "Missing sessionId or task" }, 400);
 
         const sandbox = await getSandbox(sessionId, envdAccessToken);
