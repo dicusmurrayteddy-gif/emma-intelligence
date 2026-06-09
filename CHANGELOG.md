@@ -12,15 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New Edge Functions:
   - `emma-orchestrator`: Dynamic multi-agent coordination and debate scoring.
   - `emma-causal-engine`: Advanced causal reasoning and counterfactual analysis.
-  - `emma-world-model`: Persistent world state tracking and simulation. **NEW: Newtonian Physics Integration** - Classical mechanics (F=ma, gravity, kinematics, forces, collisions) for physical entities. Hybrid AI + physics simulation for accurate trajectory prediction, object dynamics, and grounding real-world interactions.
+  - `emma-world-model`: Persistent world state tracking and simulation. **NEW: Newtonian Physics Integration** - Classical mechanics (F=ma, gravity, kinematics, forces, collisions) for physical entities. Hybrid AI + physics simulation for accurate trajectory prediction, object dynamics, and grounding real-world interactions. **EXPANDED TO ALL PHYSICS**: Multi-domain physics engine supporting Newtonian (classical), Electromagnetism (Coulomb's law, Lorentz force, EM fields), Thermodynamics (heat transfer, energy conservation, entropy), Quantum Mechanics (probabilistic amplitudes, uncertainty principle, superposition for micro-entities), Special & General Relativity (velocity-dependent time dilation, gravitational lensing/effects at extreme scales), and Particle Physics (basic interactions, decays, conservation laws). AI intelligently selects/applies appropriate physics regime(s) or combines them (e.g., relativistic EM, quantum thermo). Comprehensive hybrid simulation for any physical scenario.
   - `emma-formal-safety`: Constitutional AI safety and formal verification layers.
   - `emma-self-improve`: Automatic prompt evolution, meta-learning from usage patterns and benchmarks.
   - `emma-autonomous-loop`: Long-horizon autonomous task execution with self-correction.
   - `emma-admin-learn`: Admin dashboard insights, learning pattern detection, and controls.
   - `emma-transfer-sensory`: Multi-modal sensory input processing (vision, audio, structured data).
-- Expanded database schema support for improvement_logs, benchmark_runs, learning_patterns, prompt_evolutions, admin_insights, goals, and api_keys.
+- Expanded database schema support for improvement_logs, benchmark_runs, learning_patterns, prompt_evolutions, admin_insights, goals, and api_keys. World model state now includes multi-physics properties per entity.
 - Enhanced multi-agent cognitive pipeline with orchestration, causal modeling, and world model integration.
-- Upgraded Computer-Use Agent with better planning, error recovery, and world model context (now includes physics simulation for physical tasks).
+- Upgraded Computer-Use Agent with better planning, error recovery, and world model context (now includes full physics simulation across domains for physical tasks).
 - Polished Project IDE, Research, Voice, Artifacts, and all existing modes with improved UX, streaming performance, and cross-mode capabilities.
 - Formal safety and alignment improvements.
 - Comprehensive benchmarking and self-improvement infrastructure.
@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New dedicated enhancement branch `feature/v2-enhancements`.
 
 ### Changed
-- All core features improved, upgraded, and enhanced for production readiness and deeper capabilities.
+- All core features improved, upgraded, and enhanced for production readiness and deeper capabilities. World model is now a **Universal Physics Simulator**.
 - Tech stack and dependencies metadata modernized.
 - CI and testing infrastructure highlighted with safety and coverage checks.
 
