@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New Edge Functions:
   - `emma-orchestrator`: Dynamic multi-agent coordination and debate scoring.
   - `emma-causal-engine`: Advanced causal reasoning and counterfactual analysis.
-  - `emma-world-model`: Persistent world state tracking and simulation.
+  - `emma-world-model`: Persistent world state tracking and simulation. **NEW: Newtonian Physics Integration** - Classical mechanics (F=ma, gravity, kinematics, forces, collisions) for physical entities. Hybrid AI + physics simulation for accurate trajectory prediction, object dynamics, and grounding real-world interactions.
   - `emma-formal-safety`: Constitutional AI safety and formal verification layers.
   - `emma-self-improve`: Automatic prompt evolution, meta-learning from usage patterns and benchmarks.
   - `emma-autonomous-loop`: Long-horizon autonomous task execution with self-correction.
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `emma-transfer-sensory`: Multi-modal sensory input processing (vision, audio, structured data).
 - Expanded database schema support for improvement_logs, benchmark_runs, learning_patterns, prompt_evolutions, admin_insights, goals, and api_keys.
 - Enhanced multi-agent cognitive pipeline with orchestration, causal modeling, and world model integration.
-- Upgraded Computer-Use Agent with better planning, error recovery, and world model context.
+- Upgraded Computer-Use Agent with better planning, error recovery, and world model context (now includes physics simulation for physical tasks).
 - Polished Project IDE, Research, Voice, Artifacts, and all existing modes with improved UX, streaming performance, and cross-mode capabilities.
 - Formal safety and alignment improvements.
 - Comprehensive benchmarking and self-improvement infrastructure.
